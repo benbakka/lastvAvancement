@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Task Creation Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        pre {
+            background-color: #f5f5f5;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+        button {
+            padding: 10px 15px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 10px 0;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .result {
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Task Creation Test</h1>
+    
+    <h2>Test Task Creation</h2>
+    <button id="createTaskBtn">Create Test Task</button>
+    <div class="result">
+        <h3>Response:</h3>
+        <pre id="createTaskResult">Click the button to test...</pre>
+    </div>
+
+    <h2>Get All Tasks</h2>
+    <button id="getTasksBtn">Get All Tasks</button>
+    <div class="result">
+        <h3>Response:</h3>
+        <pre id="getTasksResult">Click the button to test...</pre>
+    </div>
+
+    <script>
+        // Test data for task creation
+        const testTask = {
+            name: "Test Task",
+            description: "Test Description",
+            category: { id: 1 },
+            villa: { id: 1 },
+            team: { id: 1 },
+            startDate: "2023-07-22",
+            endDate: "2023-07-23",
+            plannedStartDate: "2023-07-22",
+            plannedEndDate: "2023-07-23",
+            status: "PENDING",
+            progress: 0,
+            progressStatus: "ON_SCHEDULE",
+            isReceived: false,
+            isPaid: false,
+            amount: 0,
+            photos: [],
+            remarks: ""
+        };
+
+        // Create task function
+        document.getElementById('createTaskBtn').addEventListener('click', async () => {
+            const resultElement = document.getElementById('createTaskResult');
+            resultElement.textContent = 'Sending request...';
+            
+            try {
+                const response = await fetch('http://localhost:8080/api/tasks', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify(testTask)
+                });
+                
+                const responseText = await response.text();
+                let formattedResponse;
+                
+                try {
+                    // Try to parse as JSON for pretty printing
+                    const jsonResponse = JSON.parse(responseText);
+                    formattedResponse = JSON.stringify(jsonResponse, null, 2);
+                } catch (e) {
+                    // If not JSON, use the raw text
+                    formattedResponse = responseText;
+                }
+                
+                resultElement.textContent = `Status: ${response.status} ${response.statusText}\n\n${formattedResponse}`;
+            } catch (error) {
+                resultElement.textContent = `Error: ${error.message}`;
+            }
+        });
+
+        // Get all tasks function
+        document.getElementById('getTasksBtn').addEventListener('click', async () => {
+            const resultElement = document.getElementById('getTasksResult');
+            resultElement.textContent = 'Fetching tasks...';
+            
+            try {
+                const response = await fetch('http://localhost:8080/api/tasks');
+                const data = await response.json();
+                resultElement.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                resultElement.textContent = `Error: ${error.message}`;
+            }
+        });
+    </script>
+</body>
+</html>
