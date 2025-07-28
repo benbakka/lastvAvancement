@@ -41,8 +41,7 @@ public class Team {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
-    @OneToMany(mappedBy = "team", fetch = FetchType.LAZY)
-    private List<Category> categories;
+    // Categories collection removed as per requirement - team assignment is now only at task level
 
     @OneToMany(mappedBy = "team", fetch = FetchType.LAZY, cascade = CascadeType.ALL, orphanRemoval = true)
     private List<Task> tasks;
@@ -96,8 +95,7 @@ public class Team {
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
 
-    public List<Category> getCategories() { return categories; }
-    public void setCategories(List<Category> categories) { this.categories = categories; }
+    // Category getters/setters removed as per requirement - team assignment is now only at task level
 
     public List<Task> getTasks() { return tasks; }
     public void setTasks(List<Task> tasks) { this.tasks = tasks; }

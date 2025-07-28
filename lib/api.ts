@@ -1,9 +1,9 @@
-import { Project, Villa, Category, Team, Task, User, Template } from './types';
+import { Project, Villa, Category, Team, Task, TaskTemplate, User, Template } from './types';
 import type { Notification } from './types';
 import { useStore } from './store';
 
 // Connect directly to backend
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 console.log('API base URL:', API_BASE_URL);
 
 class ApiService {
@@ -25,16 +25,23 @@ class ApiService {
     }
     
     try {
+      // Create new options with merged headers to ensure Content-Type is set correctly
+      const mergedOptions = { ...options };
+      
+      // Create headers object with default values
+      mergedOptions.headers = {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'X-Requested-With': 'XMLHttpRequest',
+        // Merge with any headers provided in options
+        ...(options?.headers || {})
+      };
+      
       // Enhanced fetch configuration with proper CORS settings
       const response = await fetch(url, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'X-Requested-With': 'XMLHttpRequest',
-        },
         mode: 'cors',
         credentials: 'include', // Send cookies if needed
-        ...options,
+        ...mergedOptions
       });
       
       // Log all responses for debugging
@@ -481,20 +488,149 @@ class ApiService {
   // Categories
   async getCategories(villaId?: string): Promise<Category[]> {
     const endpoint = villaId ? `/categories?villaId=${villaId}` : '/categories';
-    return this.request<Category[]>(endpoint);
+    try {
+      const categories = await this.request<any[]>(endpoint);
+      console.log(`✅ Retrieved ${categories.length} categories`);
+      
+      // Process the response to ensure proper type conversion for the frontend
+      return categories.map(category => {
+        // Debug the raw category data from backend
+        console.log('Raw category from backend:', JSON.stringify(category));
+        
+        // Extract villaId with better error handling
+        let extractedVillaId = '';
+        if (category.villaId) {
+          // Direct villaId property (if present)
+          extractedVillaId = category.villaId.toString();
+          console.log(`Category ${category.id} has direct villaId: ${extractedVillaId}`);
+        } else if (category.villa && category.villa.id) {
+          // Nested villa object
+          extractedVillaId = category.villa.id.toString();
+          console.log(`Category ${category.id} has nested villa.id: ${extractedVillaId}`);
+        } else if (villaId) {
+          // Fallback to parameter
+          extractedVillaId = villaId;
+          console.log(`Category ${category.id} using parameter villaId: ${extractedVillaId}`);
+        }
+        
+        const mappedCategory = {
+          id: category.id ? category.id.toString() : `temp-${Date.now()}`,
+          villaId: extractedVillaId,
+          name: category.name || '',
+          startDate: new Date(category.startDate),
+          endDate: new Date(category.endDate),
+          progress: category.progress || 0,
+          status: category.status || 'ON_SCHEDULE',
+          teamId: category.team?.id?.toString() || undefined,
+          tasksCount: category.tasksCount || 0,
+          completedTasks: category.completedTasks || 0
+        };
+        
+        console.log(`Mapped category ${mappedCategory.id} (${mappedCategory.name}) with villaId: ${mappedCategory.villaId}`);
+        return mappedCategory;
+      });
+    } catch (error) {
+      console.error('❌ Failed to fetch categories:', error);
+      throw error;
+    }
+  }
+
+  async getCategoryById(id: string): Promise<Category> {
+    return this.request<Category>(`/categories/${id}`);
+  }
+
+  async getCategoriesByVillaId(villaId: string): Promise<Category[]> {
+    console.log(`🔍 Fetching categories for villa ID: ${villaId}`);
+    try {
+      // Use the correct endpoint with query parameter as implemented in the backend
+      const categories = await this.request<any[]>(`/categories?villaId=${villaId}`);
+      console.log(`✅ Found ${categories.length} categories for villa ${villaId}`);
+      
+      // Process the response to ensure proper type conversion for the frontend
+      // and explicitly set the villaId property for each category
+      return categories.map(category => ({
+        id: category.id ? category.id.toString() : `temp-${Date.now()}`,
+        // Always set the villaId to the one we're querying for
+        villaId: villaId,
+        name: category.name || '',
+        startDate: new Date(category.startDate),
+        endDate: new Date(category.endDate),
+        progress: category.progress || 0,
+        status: category.status || 'ON_SCHEDULE',
+        teamId: category.team?.id?.toString() || undefined,
+        tasksCount: category.tasksCount || 0,
+        completedTasks: category.completedTasks || 0
+      }));
+    } catch (error) {
+      console.error(`❌ Error fetching categories for villa ${villaId}:`, error);
+      throw error;
+    }
   }
 
   async createCategory(category: Omit<Category, 'id'>): Promise<Category> {
-    return this.request<Category>('/categories', {
-      method: 'POST',
-      body: JSON.stringify(category),
-    });
+    console.log(`📝 Creating new category:`, category);
+    try {
+      const response = await this.request<Category>('/categories', {
+        method: 'POST',
+        body: JSON.stringify(category),
+      });
+      console.log(`✅ Category created successfully:`, response);
+      return response;
+    } catch (error) {
+      console.error(`❌ Error creating category:`, error);
+      throw error;
+    }
   }
 
-  async updateCategory(id: string, category: Partial<Category>): Promise<Category> {
+  async createCategoryWithVilla(categoryDTO: { villaId: string; name: string; startDate: Date | string; endDate: Date | string; teamId?: string }): Promise<Category> {
+    console.log(`📝 Creating new category with villa:`, categoryDTO);
+    try {
+      // Format dates to yyyy-MM-dd format as expected by backend
+      const formattedDTO = {
+        ...categoryDTO,
+        villaId: parseInt(categoryDTO.villaId), // Convert string ID to number for backend
+        startDate: categoryDTO.startDate instanceof Date 
+          ? categoryDTO.startDate.toISOString().split('T')[0] 
+          : categoryDTO.startDate,
+        endDate: categoryDTO.endDate instanceof Date 
+          ? categoryDTO.endDate.toISOString().split('T')[0] 
+          : categoryDTO.endDate,
+        teamId: categoryDTO.teamId ? parseInt(categoryDTO.teamId) : undefined // Convert string ID to number if present
+      };
+      
+      console.log('Sending formatted category DTO to backend:', formattedDTO);
+      
+      const response = await this.request<any>('/categories/villa', {
+        method: 'POST',
+        body: JSON.stringify(formattedDTO),
+      });
+      console.log(`✅ Category created successfully with villa:`, response);
+      
+      // Process the response to ensure proper type conversion for the frontend
+      // and explicitly set the villaId property
+      return {
+        id: response.id ? response.id.toString() : `temp-${Date.now()}`,
+        // Explicitly set the villaId from the DTO
+        villaId: categoryDTO.villaId,
+        name: response.name || categoryDTO.name,
+        startDate: new Date(response.startDate || categoryDTO.startDate),
+        endDate: new Date(response.endDate || categoryDTO.endDate),
+        progress: response.progress || 0,
+        status: response.status || 'ON_SCHEDULE',
+        teamId: response.team?.id?.toString() || categoryDTO.teamId,
+        tasksCount: response.tasksCount || 0,
+        completedTasks: response.completedTasks || 0
+      };
+    } catch (error) {
+      console.error(`❌ Error creating category with villa:`, error);
+      throw error;
+    }
+  }
+
+  async updateCategory(id: string, updates: Partial<Category>): Promise<Category> {
     return this.request<Category>(`/categories/${id}`, {
       method: 'PUT',
-      body: JSON.stringify(category),
+      body: JSON.stringify(updates),
     });
   }
 
@@ -555,6 +691,63 @@ class ApiService {
       throw error;
     }
   }
+  
+  async createTeamWithDefaultTasks(team: Omit<Team, 'id'>, defaultTasks: Array<{ name: string; description: string; durationDays: number; defaultAmount: number; }>): Promise<Team> {
+    try {
+      console.log('🏗️ Creating team with default tasks:', { team, defaultTasks });
+      
+      // Prepare the data for the backend
+      const backendData = {
+        team: {
+          ...team,
+          // Convert string ID to null so backend can generate a proper ID
+          id: null,
+          // Convert date to ISO string if it exists
+          lastActivity: team.lastActivity ? team.lastActivity.toISOString() : null
+        },
+        defaultTasks: defaultTasks.map(task => ({
+          name: task.name,
+          description: task.description,
+          durationDays: task.durationDays,
+          defaultAmount: task.defaultAmount
+        }))
+      };
+      
+      console.log('Sending team with tasks data to backend:', backendData);
+      
+      // Use the new API endpoint for team with default tasks
+      const response = await this.request<any>('/teams/with-default-tasks', {
+        method: 'POST',
+        body: JSON.stringify(backendData),
+      });
+      
+      console.log('✅ Team with default tasks created successfully:', response);
+      
+      // Process the response to ensure proper type conversion for the frontend
+      return {
+        id: response.id ? response.id.toString() : `temp-${Date.now()}`, // Convert numeric ID to string for frontend
+        name: response.name || '',
+        specialty: response.specialty || '',
+        membersCount: response.membersCount || 0,
+        activeTasks: response.activeTasks || 0,
+        performance: response.performance || 0,
+        lastActivity: response.lastActivity ? new Date(response.lastActivity) : new Date()
+      };
+    } catch (error) {
+      console.error('❌ Failed to create team with default tasks:', error);
+      if (error instanceof Error && error.message.includes('CORS')) {
+        console.error('🔍 CORS Debugging Info for create team with tasks:', {
+          origin: window.location.origin,
+          targetApi: `${API_BASE_URL}/teams/with-default-tasks`,
+          requestMethod: 'POST',
+          browser: navigator.userAgent
+        });
+      }
+      throw error;
+    }
+  }
+
+  // Task Templates - Implementation moved to the Task Templates section below
 
   async updateTeam(id: string, team: Partial<Team>): Promise<Team> {
     try {
@@ -639,7 +832,62 @@ class ApiService {
   // Tasks
   async getTasks(categoryId?: string): Promise<Task[]> {
     const endpoint = categoryId ? `/tasks?categoryId=${categoryId}` : '/tasks';
+    console.log(`🔍 Fetching tasks with endpoint: ${endpoint}`);
     return this.request<Task[]>(endpoint);
+  }
+  
+  async getTasksByTeamId(teamId: string): Promise<Task[]> {
+    console.log(`🔍 Fetching tasks for team ID: ${teamId}`);
+    try {
+      const tasks = await this.request<Task[]>(`/tasks/team/${teamId}`);
+      console.log(`🔍 Retrieved ${tasks.length} tasks for team ID: ${teamId}`, tasks);
+      return tasks;
+    } catch (error) {
+      console.error(`❌ Error fetching tasks for team ID: ${teamId}`, error);
+      throw error;
+    }
+  }
+  
+  async getTasksByCategoryAndVilla(categoryId: string, villaId: string): Promise<Task[]> {
+    console.log(`🔍 Fetching tasks for category ID: ${categoryId} and villa ID: ${villaId}`);
+    try {
+      // Validate inputs
+      if (!categoryId || !villaId) {
+        console.error(`❌ Missing required parameters: categoryId=${categoryId}, villaId=${villaId}`);
+        return [];
+      }
+      
+      const numericCategoryId = Number(categoryId);
+      const numericVillaId = Number(villaId);
+      
+      if (isNaN(numericCategoryId) || isNaN(numericVillaId)) {
+        console.error(`❌ Invalid IDs: categoryId=${categoryId}, villaId=${villaId}`);
+        return [];
+      }
+      
+      // Make API request with detailed error handling
+      try {
+        const tasks = await this.request<Task[]>(`/tasks/category/${numericCategoryId}/villa/${numericVillaId}`);
+        console.log(`✅ Retrieved ${tasks.length} tasks for category ${categoryId} and villa ${villaId}`, tasks);
+        return tasks;
+      } catch (apiError: any) {
+        // Handle specific API errors
+        if (apiError.status === 404) {
+          console.error(`❌ Category or villa not found: categoryId=${categoryId}, villaId=${villaId}`);
+          return [];
+        } else if (apiError.status === 500) {
+          console.error(`❌ Server error when fetching tasks: ${apiError.message}`);
+          return [];
+        } else {
+          console.error(`❌ API error: ${apiError.message}`);
+          return [];
+        }
+      }
+    } catch (error) {
+      console.error(`❌ Error fetching tasks for category ${categoryId} and villa ${villaId}:`, error);
+      // Return empty array instead of throwing to prevent UI crashes
+      return [];
+    }
   }
 
   async createTask(task: Omit<Task, 'id'>): Promise<Task> {
@@ -687,11 +935,348 @@ class ApiService {
     }
   }
 
-  async updateTask(id: string, task: Partial<Task>): Promise<Task> {
-    return this.request<Task>(`/tasks/${id}`, {
-      method: 'PUT',
-      body: JSON.stringify(task),
+  // Bypass circular references in JSON for task updates
+  private createMinimalTaskUpdatePayload(task: Partial<Task>): any {
+    const backendTask: any = {};
+      
+    // Only include fields that are actually being updated
+    if (task.name !== undefined) backendTask.name = task.name;
+    if (task.description !== undefined) backendTask.description = task.description;
+    if (task.amount !== undefined) backendTask.amount = task.amount;
+    if (task.progress !== undefined) backendTask.progress = task.progress;
+    if (task.progressStatus !== undefined) backendTask.progressStatus = task.progressStatus.toUpperCase();
+    if (task.isReceived !== undefined) backendTask.isReceived = task.isReceived;
+    if (task.isPaid !== undefined) backendTask.isPaid = task.isPaid;
+    
+    // Handle dates - convert to string format expected by backend
+    if (task.startDate) {
+      backendTask.startDate = task.startDate instanceof Date ? 
+        task.startDate.toISOString().split('T')[0] : task.startDate;
+    }
+    
+    if (task.endDate) {
+      backendTask.endDate = task.endDate instanceof Date ? 
+        task.endDate.toISOString().split('T')[0] : task.endDate;
+    }
+    
+    if (task.plannedStartDate) {
+      backendTask.plannedStartDate = task.plannedStartDate instanceof Date ? 
+        task.plannedStartDate.toISOString().split('T')[0] : task.plannedStartDate;
+    }
+    
+    if (task.plannedEndDate) {
+      backendTask.plannedEndDate = task.plannedEndDate instanceof Date ? 
+        task.plannedEndDate.toISOString().split('T')[0] : task.plannedEndDate;
+    }
+    
+    // Handle relationships - only include ID references, not full objects
+    if (task.teamId) {
+      backendTask.teamId = Number(task.teamId);
+    }
+    
+    if (task.categoryId) {
+      backendTask.categoryId = Number(task.categoryId);
+    }
+    
+    if (task.villaId) {
+      backendTask.villaId = Number(task.villaId);
+    }
+    
+    return backendTask;
+  }
+  
+  // Direct request without fetch to avoid charset in content-type
+  private makeRawAjaxRequest<T>(url: string, method: string, data: any): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      // Create an XMLHttpRequest object
+      const xhr = new XMLHttpRequest();
+      
+      // Initialize a request
+      xhr.open(method, url, true);
+      
+      // Set headers exactly as needed without auto-additions
+      // Setting Content-Type header WITHOUT charset
+      xhr.setRequestHeader('Content-Type', 'application/json');
+      xhr.setRequestHeader('Accept', 'application/json');
+      
+      // Enable cookies/credentials
+      xhr.withCredentials = true;
+      
+      // Log request details
+      console.log(`Making raw ${method} request to ${url}`);
+      console.log('Headers:', {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      });
+      
+      // Define what happens on successful data submission
+      xhr.onload = function() {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          console.log(`XHR response received with status ${xhr.status}`);
+          try {
+            const response = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+            resolve(response as T);
+          } catch (e) {
+            reject(new Error(`Failed to parse response: ${e}`));
+          }
+        } else {
+          console.error(`XHR request failed with status ${xhr.status}: ${xhr.statusText}`);
+          console.error('Response text:', xhr.responseText);
+          reject(new Error(`Request failed with status ${xhr.status}`));
+        }
+      };
+      
+      // Define what happens in case of error
+      xhr.onerror = function() {
+        console.error('XHR request failed');
+        reject(new Error('Network error occurred'));
+      };
+      
+      // Send the request with data
+      xhr.send(data ? JSON.stringify(data) : null);
+      console.log(`XHR ${method} request sent with payload:`, data);
     });
+  }
+
+  // Attempt 1: Custom XMLHttpRequest without charset
+  // Ultra-minimal task update to avoid Jackson deserialization issues
+  async updateTaskFinal(id: string, task: Partial<Task>): Promise<Task> {
+    try {
+      console.log(`🔄 Final approach: Updating task ${id} with minimal data`);      
+      const numericId = Number(id);
+      
+      if (isNaN(numericId)) {
+        throw new Error(`Invalid task ID: ${id}`);
+      }
+      
+      // Create a completely flat, minimal task with ONLY primitive values
+      const minimalTask: Record<string, any> = {};
+      
+      // Only add fields that are explicitly in the update request
+      if (task.name !== undefined) minimalTask.name = task.name;
+      if (task.description !== undefined) minimalTask.description = task.description;
+      if (task.amount !== undefined) minimalTask.amount = task.amount;
+      if (task.progress !== undefined) minimalTask.progress = task.progress;
+      if (task.isReceived !== undefined) minimalTask.isReceived = task.isReceived;
+      if (task.isPaid !== undefined) minimalTask.isPaid = task.isPaid;
+      if (task.remarks !== undefined) minimalTask.remarks = task.remarks;
+      
+      // Convert enum to string and ensure uppercase
+      if (task.progressStatus !== undefined) {
+        minimalTask.progressStatus = String(task.progressStatus).toUpperCase();
+      }
+      
+      if (task.status !== undefined) {
+        minimalTask.status = String(task.status).toUpperCase();
+      }
+      
+      // Format dates as strings in YYYY-MM-DD format
+      if (task.startDate) {
+        minimalTask.startDate = task.startDate instanceof Date ? 
+          task.startDate.toISOString().split('T')[0] : task.startDate;
+      }
+      
+      if (task.endDate) {
+        minimalTask.endDate = task.endDate instanceof Date ? 
+          task.endDate.toISOString().split('T')[0] : task.endDate;
+      }
+      
+      if (task.plannedStartDate) {
+        minimalTask.plannedStartDate = task.plannedStartDate instanceof Date ? 
+          task.plannedStartDate.toISOString().split('T')[0] : task.plannedStartDate;
+      }
+      
+      if (task.plannedEndDate) {
+        minimalTask.plannedEndDate = task.plannedEndDate instanceof Date ? 
+          task.plannedEndDate.toISOString().split('T')[0] : task.plannedEndDate;
+      }
+      
+      // Handle relationships by sending as objects with id property
+      if (task.teamId) {
+        minimalTask.team = { id: Number(task.teamId) };
+      }
+      
+      if (task.categoryId) {
+        minimalTask.category = { id: Number(task.categoryId) };
+      }
+      
+      if (task.villaId) {
+        minimalTask.villa = { id: Number(task.villaId) };
+      }
+      
+      const apiEndpoint = `/tasks/${numericId}`;
+      const url = `${API_BASE_URL}/api${apiEndpoint}`;
+      
+      console.log('Attempting task update with multiple approaches');
+      console.log('Minimal task payload:', minimalTask);
+      
+      // Try multiple approaches in sequence until one works
+      
+      // Attempt 1: Using XMLHttpRequest with precise Content-Type control
+      try {
+        console.log('Attempt 1: Using XMLHttpRequest with precise Content-Type');
+        const result = await new Promise<Task>((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('PUT', url, true);
+          
+          // Set headers - CRITICAL: Do not add charset to Content-Type
+          xhr.setRequestHeader('Content-Type', 'application/json');
+          xhr.withCredentials = true;
+          
+          xhr.onload = function() {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              console.log('Task update successful with status:', xhr.status);
+              try {
+                const data = JSON.parse(xhr.responseText) as Task;
+                resolve(data);
+              } catch (e) {
+                reject(new Error(`Failed to parse response: ${e}`));
+              }
+            } else {
+              console.error('XHR failed with status:', xhr.status);
+              console.error('Response:', xhr.responseText);
+              reject(new Error(`Task update failed with status ${xhr.status}`));
+            }
+          };
+          
+          xhr.onerror = function() {
+            console.error('Network error during task update');
+            reject(new Error('Network error occurred'));
+          };
+          
+          // Stringify with no spaces for minimal payload
+          const jsonStr = JSON.stringify(minimalTask);
+          console.log('JSON payload being sent:', jsonStr);
+          xhr.send(jsonStr);
+        });
+        
+        return result;
+      } catch (xhrError) {
+        console.log('XMLHttpRequest approach failed:', xhrError);
+        // Continue to next approach
+      }
+      
+      // Attempt 2: Using fetch with explicit headers
+      try {
+        console.log('Attempt 2: Using fetch with explicit headers');
+        const headers = new Headers();
+        headers.append('Content-Type', 'application/json');
+        
+        const response = await fetch(url, {
+          method: 'PUT',
+          headers: headers,
+          body: JSON.stringify(minimalTask),
+          credentials: 'include'
+        });
+        
+        if (!response.ok) {
+          console.error(`Fetch failed with status: ${response.status}`);
+          throw new Error(`Task update failed with status ${response.status}`);
+        }
+        
+        const data = await response.json() as Task;
+        console.log('Task update successful with fetch:', data);
+        return data;
+      } catch (fetchError) {
+        console.log('Fetch approach failed:', fetchError);
+        // Continue to next approach
+      }
+      
+      // Attempt 3: Using POST with method override
+      try {
+        console.log('Attempt 3: Using POST with method override');
+        const formData = new FormData();
+        formData.append('task', JSON.stringify(minimalTask));
+        
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'X-HTTP-Method-Override': 'PUT'
+          },
+          body: formData,
+          credentials: 'include'
+        });
+        
+        if (!response.ok) {
+          console.error(`POST override failed with status: ${response.status}`);
+          throw new Error(`Task update failed with status ${response.status}`);
+        }
+        
+        const data = await response.json() as Task;
+        console.log('Task update successful with POST override:', data);
+        return data;
+      } catch (postError) {
+        console.log('POST override approach failed:', postError);
+        throw new Error('All update approaches failed');
+      }
+    } catch (error) {
+      console.error(`❌ Final approach failed for task ${id}:`, error);
+      throw error;
+    }
+  }
+  
+  // Test function to directly update a task with curl-like approach
+  async testDirectTaskUpdate(id: number): Promise<void> {
+    try {
+      console.log(`Testing direct task update for ID ${id}`);
+      
+      // Minimal task data with only the fields we want to update
+      const minimalTask = {
+        name: "Updated Task Name",
+        description: "Updated description",
+        progress: 50,
+        progressStatus: "ON_SCHEDULE"
+      };
+      
+      const url = `${API_BASE_URL}/api/tasks/${id}`;
+      console.log(`Making direct request to ${url}`);
+      
+      // Create a native fetch request with very specific headers
+      const headers = new Headers();
+      headers.append('Content-Type', 'application/json');
+      
+      // Log the exact headers being sent
+      console.log('Headers being sent:', Array.from(headers.entries()));
+      
+      const response = await fetch(url, {
+        method: 'PUT',
+        headers: headers,
+        body: JSON.stringify(minimalTask),
+        credentials: 'include'
+      });
+      
+      console.log(`Response status: ${response.status} ${response.statusText}`);
+      
+      // Log response headers
+      const responseHeaders: Record<string, string> = {};
+      response.headers.forEach((value, key) => {
+        responseHeaders[key] = value;
+      });
+      console.log('Response headers:', responseHeaders);
+      
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Success! Updated task:', data);
+      } else {
+        const errorText = await response.text();
+        console.error('Error response:', errorText);
+      }
+    } catch (error) {
+      console.error('Test update failed:', error);
+    }
+  }
+
+  // Main updateTask method using our final approach
+  async updateTask(id: string, task: Partial<Task>): Promise<Task> {
+    console.log(`🔄 Updating task ${id}:`, task);
+    
+    try {
+      // Use the final approach that addresses Jackson circular references and content-type issues
+      return await this.updateTaskFinal(id, task);
+    } catch (error) {
+      console.error('Task update failed:', error);
+      throw error; // Re-throw to allow handling in the component
+    }
   }
 
   async deleteTask(id: string): Promise<void> {
@@ -720,6 +1305,46 @@ class ApiService {
     return this.request<User>('/users', {
       method: 'POST',
       body: JSON.stringify(user),
+    });
+  }
+
+  // Task Templates
+  async getTaskTemplates(): Promise<TaskTemplate[]> {
+    return this.request<TaskTemplate[]>('/task-templates');
+  }
+  
+   // Task Templates
+   async getTaskTemplatesByTeamId(teamId: string): Promise<TaskTemplate[]> {
+    try {
+      const templates = await this.request<TaskTemplate[]>(`/task-templates/team/${teamId}`);
+      return templates;
+    } catch (error) {
+      return [];
+    }
+  }
+ 
+
+  async getTaskTemplateById(id: string): Promise<TaskTemplate> {
+    return this.request<TaskTemplate>(`/task-templates/${id}`);
+  }
+
+  async createTaskTemplate(template: Omit<TaskTemplate, 'id'>): Promise<TaskTemplate> {
+    return this.request<TaskTemplate>('/task-templates', {
+      method: 'POST',
+      body: JSON.stringify(template),
+    });
+  }
+
+  async updateTaskTemplate(id: string, updates: Partial<TaskTemplate>): Promise<TaskTemplate> {
+    return this.request<TaskTemplate>(`/task-templates/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    });
+  }
+
+  async deleteTaskTemplate(id: string): Promise<void> {
+    return this.request<void>(`/task-templates/${id}`, {
+      method: 'DELETE',
     });
   }
 
@@ -764,44 +1389,79 @@ class ApiService {
         console.log('⚠ Will still attempt to load data, but expect CORS issues');
       }
       
-      // Load core data with Promise.all for efficiency
-      console.log('📥 Fetching core application data...');
-      const [projects, teams, notifications, users, templates] = await Promise.all([
+      // Load all data in parallel for better performance
+      const [projects, teams, templates, taskTemplates] = await Promise.all([
         this.getProjects(),
         this.getTeams(),
-        this.getNotifications(),
-        this.getUsers(),
         this.getTemplates(),
+        this.getTaskTemplates()
       ]);
-
-      console.log('💾 Updating application store with fetched data');
-      // Update store with fetched data
-      useStore.setState({
-        projects,
-        teams,
-        notifications,
-        users,
-        templates,
-      });
-
-      // Load related data sequentially
-      // Load villas for the first project if available
+      
+      // Update the store with the loaded data
+      const store = useStore.getState();
+      
+      // Set projects
+      projects.forEach(project => store.addProject(project));
+      console.log(`✅ Loaded ${projects.length} projects`);
+      
+      // Set teams
+      teams.forEach(team => store.addTeam(team));
+      console.log(`✅ Loaded ${teams.length} teams`);
+      
+      // Set templates
+      templates.forEach(template => store.addTemplate(template));
+      console.log(`✅ Loaded ${templates.length} templates`);
+      
+      // Set task templates
+      taskTemplates.forEach(template => store.addTaskTemplate(template));
+      console.log(`✅ Loaded ${taskTemplates.length} task templates`);
+      
+      // If there are projects, load villas for the first project
       if (projects.length > 0) {
-        console.log(`📊 Loading villas for project: ${projects[0].name} (${projects[0].id})`);
-        const villas = await this.getVillas(projects[0].id);
-        useStore.setState({ villas });
-
-        // Load categories for the first villa if available
+        const firstProject = projects[0];
+        store.setSelectedProject(firstProject);
+        
+        // Load villas for the selected project
+        const villas = await this.getVillas(firstProject.id);
+        villas.forEach(villa => store.addVilla(villa));
+        console.log(`✅ Loaded ${villas.length} villas for project ${firstProject.id}`);
+        
+        // If there are villas, set the first one as selected
         if (villas.length > 0) {
-          console.log(`📊 Loading categories for villa: ${villas[0].name} (${villas[0].id})`);
-          const categories = await this.getCategories(villas[0].id);
-          useStore.setState({ categories });
-
-          // Load tasks for the first category if available
-          if (categories.length > 0) {
-            console.log(`📊 Loading tasks for category: ${categories[0].name} (${categories[0].id})`);
-            const tasks = await this.getTasks(categories[0].id);
-            useStore.setState({ tasks });
+          const firstVilla = villas[0];
+          store.setSelectedVilla(firstVilla);
+          
+          // Load ALL categories (not just for the first villa)
+          // This ensures we have categories for all villas
+          const allCategories = await this.getCategories();
+          console.log(`✅ Loaded ${allCategories.length} total categories`);
+          
+          // Debug categories before adding to store
+          allCategories.forEach(category => {
+            console.log(`Category ${category.id} (${category.name}) has villaId: ${category.villaId}`);
+            store.addCategory(category);
+          });
+          
+          // Load tasks for all categories
+          if (allCategories.length > 0) {
+            console.log(`📊 Loading tasks for all categories`);
+            let allTasks: Task[] = [];
+            
+            // Load tasks for a sample of categories (to avoid too many requests)
+            const categoriesToLoad = allCategories.slice(0, Math.min(5, allCategories.length));
+            
+            for (const category of categoriesToLoad) {
+              try {
+                console.log(`📊 Loading tasks for category: ${category.name} (${category.id})`);
+                const categoryTasks = await this.getTasks(category.id);
+                allTasks = [...allTasks, ...categoryTasks];
+              } catch (error) {
+                console.error(`❌ Error loading tasks for category ${category.id}:`, error);
+              }
+            }
+            
+            console.log(`💾 Updating store with ${allTasks.length} total tasks`);
+            useStore.setState({ tasks: allTasks });
           }
         }
       }

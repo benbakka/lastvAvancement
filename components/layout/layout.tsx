@@ -132,6 +132,61 @@ export function Layout({ children }: LayoutProps) {
           });
         }
         
+        // Fetch categories for all villas
+        try {
+          console.log('Fetching all categories');
+          const fetchedCategories = await apiService.getCategories();
+          console.log('Fetched categories from API:', fetchedCategories);
+          
+          if (Array.isArray(fetchedCategories)) {
+            console.log(`Found ${fetchedCategories.length} categories`);
+            
+            // Clear existing categories to avoid duplicates
+            const categories = useStore.getState().categories;
+            console.log(`Clearing ${categories.length} existing categories before adding new ones`);
+            
+            // Clear all existing categories
+            categories.forEach((category: any) => {
+              useStore.getState().deleteCategory(category.id);
+            });
+            
+            // Add each category to the store with proper villaId mapping
+            fetchedCategories.forEach((category: any) => {
+              try {
+                // Ensure critical fields are correct
+                const categoryWithDates = {
+                  ...category,
+                  id: category.id.toString(),
+                  villaId: category.villaId ? category.villaId.toString() : 
+                          (category.villa && category.villa.id ? category.villa.id.toString() : null),
+                  startDate: category.startDate instanceof Date ? 
+                    category.startDate : new Date(category.startDate),
+                  endDate: category.endDate instanceof Date ? 
+                    category.endDate : new Date(category.endDate)
+                };
+                
+                console.log(`Adding category ${categoryWithDates.id} (${categoryWithDates.name}) with villaId: ${categoryWithDates.villaId}`);
+                addCategory(categoryWithDates);
+              } catch (categoryError) {
+                console.error('Error processing category:', category, categoryError);
+              }
+            });
+            
+            // Verify categories were added correctly
+            const updatedCategories = useStore.getState().categories;
+            console.log(`Store now has ${updatedCategories.length} categories`);
+          } else {
+            console.error('Fetched categories is not an array:', fetchedCategories);
+          }
+        } catch (categoriesError) {
+          console.error('Failed to fetch categories:', categoriesError);
+          toast({
+            title: 'Erreur de chargement des catégories',
+            description: 'Impossible de charger les catégories. Veuillez réessayer.',
+            variant: 'destructive',
+          });
+        }
+        
         // Fetch teams
         try {
           console.log('Fetching teams');

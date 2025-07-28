@@ -22,6 +22,12 @@ public class Category {
     @JoinColumn(name = "villa_id", nullable = false)
     @JsonBackReference
     private Villa villa;
+    
+    // Add a getter for villaId to expose it in JSON response
+    @Transient
+    public Long getVillaId() {
+        return villa != null ? villa.getId() : null;
+    }
 
     @NotBlank(message = "Category name is required")
     @Column(nullable = false)
@@ -42,9 +48,7 @@ public class Category {
     @Column(nullable = false)
     private CategoryStatus status = CategoryStatus.ON_SCHEDULE;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "team_id")
-    private Team team;
+    // Team field removed as per requirement - teams are now only assigned at task level
 
     @Column(name = "tasks_count", nullable = false)
     private Integer tasksCount = 0;
@@ -109,8 +113,7 @@ public class Category {
     public CategoryStatus getStatus() { return status; }
     public void setStatus(CategoryStatus status) { this.status = status; }
 
-    public Team getTeam() { return team; }
-    public void setTeam(Team team) { this.team = team; }
+    // Team getters and setters removed as per requirement - teams are now only assigned at task level
 
     public Integer getTasksCount() { return tasksCount; }
     public void setTasksCount(Integer tasksCount) { this.tasksCount = tasksCount; }

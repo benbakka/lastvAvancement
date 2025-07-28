@@ -1,7 +1,9 @@
 package com.chantierpro.controller;
 
 import com.chantierpro.entity.Task;
+import com.chantierpro.entity.TaskTemplate;
 import com.chantierpro.service.TaskService;
+import com.chantierpro.service.TaskTemplateService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -17,6 +19,9 @@ public class TaskController {
 
     @Autowired
     private TaskService taskService;
+    
+    @Autowired
+    private TaskTemplateService taskTemplateService;
 
     @GetMapping
     public ResponseEntity<List<Task>> getAllTasks(@RequestParam(required = false) Long categoryId) {
@@ -82,6 +87,53 @@ public class TaskController {
     public ResponseEntity<List<Task>> getTasksByTeamId(@PathVariable Long teamId) {
         List<Task> tasks = taskService.getTasksByTeamId(teamId);
         return ResponseEntity.ok(tasks);
+    }
+    
+    @GetMapping("/category/{categoryId}/villa/{villaId}")
+    public ResponseEntity<List<Task>> getTasksByCategoryIdAndVillaId(
+            @PathVariable Long categoryId,
+            @PathVariable Long villaId) {
+        try {
+            if (categoryId == null || villaId == null) {
+                return ResponseEntity.badRequest().build();
+            }
+            
+            System.out.println("Fetching tasks for category ID: " + categoryId + " and villa ID: " + villaId);
+            List<Task> tasks = taskService.getTasksByCategoryIdAndVillaId(categoryId, villaId);
+            System.out.println("Found " + tasks.size() + " tasks");
+            
+            return ResponseEntity.ok(tasks);
+        } catch (Exception e) {
+            System.err.println("Error fetching tasks by category and villa: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.status(500).build();
+        }
+    }
+    
+    @PostMapping("/create-for-team/{teamId}")
+    public ResponseEntity<?> createTaskForTeam(@PathVariable Long teamId, @RequestBody Task task) {
+        try {
+            System.out.println("Creating task for team ID: " + teamId);
+            Task createdTask = taskService.createTaskForTeam(teamId, task);
+            return ResponseEntity.ok(createdTask);
+        } catch (Exception e) {
+            System.err.println("Error creating task for team: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+        }
+    }
+    
+    @PostMapping("/generate-from-templates/{teamId}")
+    public ResponseEntity<?> generateTasksFromTemplates(@PathVariable Long teamId) {
+        try {
+            System.out.println("Generating tasks from templates for team ID: " + teamId);
+            List<Task> generatedTasks = taskService.generateTasksFromTemplates(teamId);
+            return ResponseEntity.ok(generatedTasks);
+        } catch (Exception e) {
+            System.err.println("Error generating tasks from templates: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+        }
     }
 
     @GetMapping("/status/{status}")
@@ -150,5 +202,43 @@ public class TaskController {
         );
         
         return ResponseEntity.ok(amounts);
+    }
+    
+    // TaskTemplate integration endpoints
+    
+    @GetMapping("/template/{templateId}")
+    public ResponseEntity<List<Task>> getTasksByTemplateId(@PathVariable Long templateId) {
+        List<Task> tasks = taskService.getTasksByTemplateId(templateId);
+        return ResponseEntity.ok(tasks);
+    }
+    
+    @PostMapping("/from-template")
+    public ResponseEntity<?> createTaskFromTemplate(
+            @RequestParam Long templateId,
+            @RequestParam Long categoryId,
+            @RequestParam Long villaId,
+            @RequestParam(required = false) Long teamId) {
+        try {
+            Task createdTask = taskService.createTaskFromTemplate(templateId, categoryId, villaId, teamId);
+            return ResponseEntity.ok(createdTask);
+        } catch (RuntimeException e) {
+            return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
+        }
+    }
+    
+    @GetMapping("/template/{templateId}/status/{status}")
+    public ResponseEntity<List<Task>> getTasksByTemplateIdAndStatus(
+            @PathVariable Long templateId,
+            @PathVariable Task.TaskStatus status) {
+        List<Task> tasks = taskService.getTasksByTemplateIdAndStatus(templateId, status);
+        return ResponseEntity.ok(tasks);
+    }
+    
+    @GetMapping("/template/{templateId}/team/{teamId}")
+    public ResponseEntity<List<Task>> getTasksByTemplateIdAndTeamId(
+            @PathVariable Long templateId,
+            @PathVariable Long teamId) {
+        List<Task> tasks = taskService.getTasksByTemplateIdAndTeamId(templateId, teamId);
+        return ResponseEntity.ok(tasks);
     }
 }

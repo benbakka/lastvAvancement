@@ -1,5 +1,6 @@
 package com.chantierpro.controller;
 
+import com.chantierpro.dto.TeamWithTasksDTO;
 import com.chantierpro.entity.Team;
 import com.chantierpro.service.TeamService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,6 +36,24 @@ public class TeamController {
     public ResponseEntity<Team> createTeam(@Valid @RequestBody Team team) {
         Team createdTeam = teamService.createTeam(team);
         return ResponseEntity.ok(createdTeam);
+    }
+
+    @PostMapping("/with-default-tasks")
+    public ResponseEntity<?> createTeamWithDefaultTasks(@Valid @RequestBody TeamWithTasksDTO teamWithTasksDTO) {
+        try {
+            System.out.println("TeamController: Received request to create team with default tasks");
+            System.out.println("Team name: " + teamWithTasksDTO.getTeam().getName());
+            System.out.println("Default tasks count: " + 
+                             (teamWithTasksDTO.getDefaultTasks() != null ? teamWithTasksDTO.getDefaultTasks().size() : 0));
+            
+            Team createdTeam = teamService.createTeamWithDefaultTasks(teamWithTasksDTO);
+            System.out.println("TeamController: Team created successfully with ID: " + createdTeam.getId());
+            return ResponseEntity.ok(createdTeam);
+        } catch (Exception e) {
+            System.err.println("TeamController: Error creating team with default tasks: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.badRequest().body("Error: " + e.getMessage());
+        }
     }
 
     @PutMapping("/{id}")

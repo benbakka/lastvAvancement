@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { apiService } from '@/lib/api';
 import { useStore } from '@/lib/store';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -95,117 +95,48 @@ export function TeamsManager() {
         name: formData.name,
         specialty: formData.specialty,
         membersCount: parseInt(formData.membersCount),
-        activeTasks: formData.tasks.length,
+        activeTasks: 0,
         performance: 0,
         lastActivity: new Date()
       };
       
       console.log('Creating team with data:', teamData);
       
-      // Save to backend using the API service
-      const savedTeam = await apiService.createTeam(teamData);
-      console.log('Team saved to backend:', savedTeam);
+      let savedTeam;
+      
+      // Check if we have default tasks to create
+      if (formData.tasks.length > 0) {
+        console.log('Creating team with default tasks:', formData.tasks);
+        
+        // Convert task form data to the format expected by the API
+        const defaultTasks = formData.tasks.map(task => ({
+          name: task.name,
+          description: task.description || '',
+          durationDays: parseInt(task.duration || '1'),
+          defaultAmount: task.amount ? parseFloat(task.amount) : 0
+        }));
+        
+        // Use the new API endpoint to create team with default tasks in one call
+        savedTeam = await apiService.createTeamWithDefaultTasks(teamData, defaultTasks);
+        console.log('Team with default tasks saved to backend:', savedTeam);
+      } else {
+        // If no tasks, just create the team
+        savedTeam = await apiService.createTeam(teamData);
+        console.log('Team saved to backend:', savedTeam);
+      }
       
       // Add the team with backend-generated ID to the store
       addTeam(savedTeam);
       
-      // Create associated tasks
-      if (formData.tasks.length > 0) {
-        console.log('Creating tasks for team:', formData.tasks);
-        
-        // Get the first villa and category for task assignment
-        // In a real scenario, you might want to let the user select these
-        const projectVillas = selectedProject ? getVillasByProject(selectedProject.id) : [];
-        
-        if (projectVillas.length > 0) {
-          const firstVilla = projectVillas[0];
-          const villaCategories = categories.filter(cat => cat.villaId === firstVilla.id);
-          
-          if (villaCategories.length > 0) {
-            const firstCategory = villaCategories[0];
-            
-            // Create each task from the form data
-            for (const taskTemplate of formData.tasks) {
-              try {
-                // Calculate dates based on duration
-                const startDate = new Date();
-                const endDate = new Date();
-                endDate.setDate(endDate.getDate() + parseInt(taskTemplate.duration || '1'));
-                
-                // Create task data matching the Task type requirements
-                const taskData = {
-                  name: taskTemplate.name,
-                  description: taskTemplate.description || '',
-                  teamId: savedTeam.id,
-                  categoryId: firstCategory.id,
-                  villaId: firstVilla.id,
-                  startDate: startDate,
-                  endDate: endDate,
-                  plannedStartDate: startDate,
-                  plannedEndDate: endDate,
-                  // Use lowercase for frontend types, the API service will convert to uppercase
-                  status: 'pending' as 'pending' | 'in_progress' | 'completed' | 'delayed',
-                  progress: 0,
-                  progressStatus: 'on_schedule' as 'on_schedule' | 'ahead' | 'behind' | 'at_risk',
-                  isReceived: false,
-                  isPaid: false,
-                  amount: taskTemplate.amount ? parseFloat(taskTemplate.amount) : 0, // Use 0 instead of undefined
-                  photos: [],
-                  remarks: '',
-                  createdAt: new Date(),
-                  updatedAt: new Date()
-                };
-                
-                console.log('Creating task with data:', taskData);
-              try {
-                // Keep IDs as strings for the frontend Task type
-                // The ApiService.createTask method will handle the conversion internally
-                console.log('Sending task to backend with IDs:', {
-                  teamId: savedTeam.id,
-                  categoryId: firstCategory.id,
-                  villaId: firstVilla.id
-                });
-                
-                const savedTask = await apiService.createTask(taskData);
-                console.log('Task saved to backend successfully:', savedTask);
-                
-                // Add the task to the store using the useStore hook
-                useStore.getState().addTask(savedTask);
-                
-                // Update team's activeTasks count
-                const updatedTeam = {
-                  ...savedTeam,
-                  activeTasks: (savedTeam.activeTasks || 0) + 1
-                };
-                // Update team's activeTasks count in the store
-                const store = useStore.getState();
-                if (typeof store.updateTeam === 'function') {
-                  // updateTeam requires id and updates as separate arguments
-                  store.updateTeam(savedTeam.id, { activeTasks: (savedTeam.activeTasks || 0) + 1 });
-                }
-              } catch (error) {
-                const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-                console.error('TASK CREATION FAILED:', error);
-                console.error('Task data that failed:', JSON.stringify(taskData, null, 2));
-                // Display an error notification to the user
-                alert('Failed to create task: ' + errorMessage);
-              }
-              } catch (taskError) {
-                console.error('Failed to create task:', taskError);
-              }
-            }
-          } else {
-            console.warn('No categories available for task assignment');
-          }
-        } else {
-          console.warn('No villas available for task assignment');
-        }
-      }
-      
+      // Reset the form
       resetForm();
+      
+      // Show success message
+      alert('Équipe créée avec succès!');
     } catch (error) {
       console.error('Failed to create team:', error);
-      // You could add a toast notification here to inform the user of the error
+      // Show error message
+      alert('Erreur lors de la création de l\'équipe: ' + (error instanceof Error ? error.message : 'Erreur inconnue'));
     }
   };
 
@@ -313,7 +244,72 @@ export function TeamsManager() {
     return { text: `Il y a ${daysSinceActivity} jours`, color: 'text-red-600' };
   };
 
+  // State to store team tasks
+  const [teamTasks, setTeamTasks] = useState<Task[]>([]);
+  const [loadingTasks, setLoadingTasks] = useState(false);
+  const [currentTeamId, setCurrentTeamId] = useState<string | null>(null);
+
+  // Effect to load tasks when viewingTeam changes
+  useEffect(() => {
+    if (viewingTeam) {
+      // Load tasks when a team is selected for viewing
+      fetchTeamTasks(viewingTeam.id);
+    }
+  }, [viewingTeam]);
+
+  // Fetch task templates for a specific team
+  const fetchTeamTasks = async (teamId: string) => {
+    try {
+      setLoadingTasks(true);
+      setCurrentTeamId(teamId);
+      console.log(`Fetching task templates for team ${teamId}...`);
+      const fetchedTemplates = await apiService.getTaskTemplatesByTeamId(teamId);
+      console.log(`Fetched ${fetchedTemplates.length} task templates for team ${teamId}:`, fetchedTemplates);
+      
+      // Convert task templates to the format expected by the UI
+      const now = new Date();
+      const tasksFromTemplates: Task[] = fetchedTemplates.map(template => ({
+        id: template.id,
+        name: template.name,
+        description: template.description || '',
+        status: 'pending' as const, // Default status for templates
+        progress: 0, // Default progress for templates
+        villaId: '', // These will be assigned when tasks are created from templates
+        categoryId: '',
+        teamId: teamId,
+        amount: template.defaultAmount || 0,
+        isReceived: false,
+        isPaid: false,
+        // Required fields for Task interface
+        templateId: template.id,
+        startDate: now,
+        endDate: new Date(now.getTime() + (template.durationDays || 1) * 24 * 60 * 60 * 1000),
+        plannedStartDate: now,
+        plannedEndDate: new Date(now.getTime() + (template.durationDays || 1) * 24 * 60 * 60 * 1000),
+        progressStatus: 'on_schedule' as const,
+        photos: [],
+        createdAt: template.createdAt || now,
+        updatedAt: template.updatedAt || now
+      }));
+      
+      setTeamTasks(tasksFromTemplates);
+      return tasksFromTemplates;
+    } catch (error) {
+      console.error('Failed to fetch team task templates:', error);
+      setTeamTasks([]);
+      return [];
+    } finally {
+      setLoadingTasks(false);
+    }
+  };
+  
+  // For backward compatibility with existing code
   const getTeamTasks = (teamId: string) => {
+    // If we're viewing this team already, return the cached tasks
+    if (teamId === currentTeamId) {
+      return teamTasks;
+    }
+    // Otherwise, fetch the tasks (but this is now handled by the useEffect)
     return tasks.filter(task => task.teamId === teamId);
   };
 
@@ -541,10 +537,11 @@ export function TeamsManager() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredTeams.map((team) => {
           const activityStatus = getActivityStatus(team.lastActivity);
-          const teamTasks = getTeamTasks(team.id);
-          const completedTasks = teamTasks.filter(t => t.status === 'completed').length;
-          const totalAmount = teamTasks.reduce((sum, task) => sum + (task.amount || 0), 0);
-          const paidAmount = teamTasks.filter(t => t.isPaid).reduce((sum, task) => sum + (task.amount || 0), 0);
+          // Use the tasks from the store for the card display
+          const teamTasksFromStore = tasks.filter(task => task.teamId === team.id);
+          const completedTasks = teamTasksFromStore.filter(t => t.status === 'completed').length;
+          const totalAmount = teamTasksFromStore.reduce((sum, task) => sum + (task.amount || 0), 0);
+          const paidAmount = teamTasksFromStore.filter(t => t.isPaid).reduce((sum, task) => sum + (task.amount || 0), 0);
           
           return (
             <Card key={`team-${team.id}`} className="hover:shadow-lg transition-shadow">
@@ -570,7 +567,7 @@ export function TeamsManager() {
                       <div className="text-xs text-blue-600">Membres</div>
                     </div>
                     <div className="text-center p-3 bg-orange-50 rounded-lg">
-                      <div className="text-lg font-bold text-orange-600">{teamTasks.length}</div>
+                      <div className="text-lg font-bold text-orange-600">{teamTasksFromStore.length}</div>
                       <div className="text-xs text-orange-600">Tâches assignées</div>
                     </div>
                   </div>
@@ -598,7 +595,7 @@ export function TeamsManager() {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-gray-600">Tâches terminées:</span>
-                      <span className="font-medium">{completedTasks}/{teamTasks.length}</span>
+                      <span className="font-medium">{completedTasks}/{teamTasksFromStore.length}</span>
                     </div>
                     {totalAmount > 0 && (
                       <div className="flex items-center justify-between text-sm">
@@ -611,11 +608,11 @@ export function TeamsManager() {
                   </div>
 
                   {/* Recent Tasks */}
-                  {teamTasks.length > 0 && (
+                  {teamTasksFromStore.length > 0 && (
                     <div className="space-y-2">
                       <h4 className="text-sm font-medium">Tâches récentes:</h4>
                       <div className="space-y-1 max-h-24 overflow-y-auto">
-                        {teamTasks.slice(0, 3).map((task) => (
+                        {teamTasksFromStore.slice(0, 3).map((task) => (
                           <div key={`task-recent-${task.id}`} className="text-xs p-2 bg-gray-50 rounded flex items-center justify-between">
                             <div className="flex-1 min-w-0">
                               <div className="font-medium truncate">{task.name}</div>
@@ -737,7 +734,12 @@ export function TeamsManager() {
       </Dialog>
 
       {/* View Team Dialog */}
-      <Dialog open={!!viewingTeam} onOpenChange={() => setViewingTeam(null)}>
+      <Dialog 
+        open={!!viewingTeam} 
+        onOpenChange={(open) => {
+          if (!open) setViewingTeam(null);
+        }}
+      >
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center">
@@ -781,10 +783,24 @@ export function TeamsManager() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    {getTeamTasks(viewingTeam.id).length === 0 ? (
-                      <p className="text-gray-500 text-center py-8">Aucune tâche assignée</p>
+                    {loadingTasks ? (
+                      <p className="text-gray-500 text-center py-8">Chargement des tâches...</p>
+                    ) : teamTasks.length === 0 ? (
+                      <div>
+                        <p className="text-gray-500 text-center py-4">Aucune tâche assignée</p>
+                        <div className="flex justify-center">
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => fetchTeamTasks(viewingTeam.id)}
+                            className="mt-2"
+                          >
+                            Rafraîchir les tâches
+                          </Button>
+                        </div>
+                      </div>
                     ) : (
-                      getTeamTasks(viewingTeam.id).map((task) => (
+                      teamTasks.map((task) => (
                         <div key={`task-detail-${task.id}`} className="border rounded-lg p-4">
                           <div className="flex items-center justify-between mb-2">
                             <h4 className="font-medium">{task.name}</h4>

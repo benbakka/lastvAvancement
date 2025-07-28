@@ -10,13 +10,15 @@ import java.util.List;
 @Repository
 public interface CategoryRepository extends JpaRepository<Category, Long> {
     
-    List<Category> findByVillaId(Long villaId);
+    // Use villa.id to query through the relationship
+    List<Category> findByVilla_Id(Long villaId);
     
-    List<Category> findByTeamId(Long teamId);
+    // Team-related query removed as per requirement - team assignment is now only at task level
     
     List<Category> findByStatus(Category.CategoryStatus status);
     
-    List<Category> findByVillaIdAndStatus(Long villaId, Category.CategoryStatus status);
+    // Use villa.id to query through the relationship
+    List<Category> findByVilla_IdAndStatus(Long villaId, Category.CategoryStatus status);
     
     @Query("SELECT c FROM Category c WHERE c.villa.project.id = ?1")
     List<Category> findByProjectId(Long projectId);

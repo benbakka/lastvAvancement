@@ -1,6 +1,7 @@
 package com.chantierpro.controller;
 
 import com.chantierpro.entity.Category;
+import com.chantierpro.dto.CategoryDTO;
 import com.chantierpro.service.CategoryService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
@@ -44,6 +45,21 @@ public class CategoryController {
             return ResponseEntity.badRequest().build();
         }
     }
+    
+    @PostMapping("/villa")
+    public ResponseEntity<?> createCategoryForVilla(@Valid @RequestBody CategoryDTO categoryDTO) {
+        try {
+            System.out.println("Received category DTO: " + categoryDTO.getName() + ", villaId: " + categoryDTO.getVillaId());
+            System.out.println("Start date: " + categoryDTO.getStartDate() + ", End date: " + categoryDTO.getEndDate());
+            
+            Category createdCategory = categoryService.createCategoryFromDTO(categoryDTO);
+            return ResponseEntity.ok(createdCategory);
+        } catch (Exception e) {
+            System.err.println("Error creating category: " + e.getMessage());
+            e.printStackTrace();
+            return ResponseEntity.badRequest().body("Error creating category: " + e.getMessage());
+        }
+    }
 
     @PutMapping("/{id}")
     public ResponseEntity<Category> updateCategory(@PathVariable Long id, @Valid @RequestBody Category categoryDetails) {
@@ -71,11 +87,12 @@ public class CategoryController {
         return ResponseEntity.ok(categories);
     }
 
-    @GetMapping("/team/{teamId}")
-    public ResponseEntity<List<Category>> getCategoriesByTeamId(@PathVariable Long teamId) {
-        List<Category> categories = categoryService.getCategoriesByTeamId(teamId);
-        return ResponseEntity.ok(categories);
-    }
+    // Team-related endpoint removed as per requirement - teams are now only assigned at task level
+    // @GetMapping("/team/{teamId}")
+    // public ResponseEntity<List<Category>> getCategoriesByTeamId(@PathVariable Long teamId) {
+    //     List<Category> categories = categoryService.getCategoriesByTeamId(teamId);
+    //     return ResponseEntity.ok(categories);
+    // }
 
     @GetMapping("/status/{status}")
     public ResponseEntity<List<Category>> getCategoriesByStatus(@PathVariable Category.CategoryStatus status) {

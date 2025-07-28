@@ -33,7 +33,7 @@ export interface Category {
   startDate: Date;
   endDate: Date;
   progress: number;
-  status: 'on_schedule' | 'in_progress' | 'warning' | 'delayed';
+  status: 'ON_SCHEDULE' | 'IN_PROGRESS' | 'WARNING' | 'DELAYED';
   teamId?: string;
   tasksCount: number;
   completedTasks: number;
@@ -49,8 +49,19 @@ export interface Team {
   lastActivity: Date;
 }
 
+export interface TaskTemplate {
+  id: string;
+  name: string;
+  description?: string;
+  durationDays?: number;
+  defaultAmount?: number;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
 export interface Task {
   id: string;
+  templateId?: string; // Reference to TaskTemplate
   categoryId: string;
   villaId: string;
   name: string;
@@ -103,13 +114,26 @@ export interface Template {
   description: string;
   categories: {
     name: string;
+    startDate?: string;
+    endDate?: string;
     teams: {
       name: string;
       specialty: string;
       tasks: {
         name: string;
+        description?: string;
         duration?: string;
         amount?: string;
+        plannedStartDate?: string;
+        plannedEndDate?: string;
+        actualStartDate?: string;
+        actualEndDate?: string;
+        progress?: number;
+        progressStatus?: 'on_schedule' | 'ahead' | 'behind' | 'at_risk';
+        status?: 'pending' | 'in_progress' | 'completed' | 'delayed';
+        isReceived?: boolean;
+        isPaid?: boolean;
+        remarks?: string;
       }[];
     }[];
   }[];

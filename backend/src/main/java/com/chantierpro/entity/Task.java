@@ -4,6 +4,7 @@ import jakarta.persistence.*;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import com.fasterxml.jackson.annotation.JsonBackReference;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -17,16 +18,32 @@ public class Task {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "template_id")
+    @JsonIgnoreProperties({"tasks", "hibernateLazyInitializer", "handler"})
+    private TaskTemplate template;
+
     @NotNull(message = "Category is required")
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "category_id", nullable = false)
     @JsonBackReference
     private Category category;
+    
+    @Transient
+    public Long getCategoryId() {
+        return category != null ? category.getId() : null;
+    }
 
     @NotNull(message = "Villa is required")
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "villa_id", nullable = false)
+    @JsonIgnoreProperties({"categories", "tasks", "project", "hibernateLazyInitializer", "handler"})
     private Villa villa;
+    
+    @Transient
+    public Long getVillaId() {
+        return villa != null ? villa.getId() : null;
+    }
 
     @NotBlank(message = "Task name is required")
     @Column(nullable = false)
@@ -37,7 +54,13 @@ public class Task {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "team_id")
+    @JsonIgnoreProperties({"tasks", "hibernateLazyInitializer", "handler"})
     private Team team;
+    
+    @Transient
+    public Long getTeamId() {
+        return team != null ? team.getId() : null;
+    }
 
     @NotNull(message = "Start date is required")
     @Column(name = "start_date", nullable = false)
@@ -124,6 +147,9 @@ public class Task {
     // Getters and Setters
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
+    
+    public TaskTemplate getTemplate() { return template; }
+    public void setTemplate(TaskTemplate template) { this.template = template; }
 
     public Category getCategory() { return category; }
     public void setCategory(Category category) { this.category = category; }

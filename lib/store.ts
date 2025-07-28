@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { Project, Villa, Category, Team, Task, Notification, User, Template } from './types';
+import { Project, Villa, Category, Team, Task, TaskTemplate, Notification, User, Template } from './types';
 
 interface AppState {
   // Current selections
@@ -15,6 +15,7 @@ interface AppState {
   notifications: Notification[];
   users: User[];
   templates: Template[];
+  taskTemplates: TaskTemplate[];
   
   // UI state
   sidebarOpen: boolean;
@@ -25,6 +26,7 @@ interface AppState {
   setSelectedVilla: (villa: Villa | null) => void;
   setSidebarOpen: (open: boolean) => void;
   setLoading: (loading: boolean) => void;
+  setTasks: (tasks: Task[]) => void;
   
   // Data actions
   addProject: (project: Project) => void;
@@ -48,13 +50,18 @@ interface AppState {
   deleteCategory: (id: string) => void;
   
   addTemplate: (template: Template) => void;
+  updateTemplate: (id: string, updates: Partial<Template>) => void;
+  deleteTemplate: (id: string) => void;
+  
+  // Task Templates
+  addTaskTemplate: (template: TaskTemplate) => void;
+  updateTaskTemplate: (id: string, updates: Partial<TaskTemplate>) => void;
+  deleteTaskTemplate: (id: string) => void;
   
   // User management
   addUser: (user: User) => void;
   updateUser: (id: string, updates: Partial<User>) => void;
   deleteUser: (id: string) => void;
-  updateTemplate: (id: string, updates: Partial<Template>) => void;
-  deleteTemplate: (id: string) => void;
   
   markNotificationAsRead: (id: string) => void;
   clearAllNotifications: () => void;
@@ -78,6 +85,7 @@ export const useStore = create<AppState>((set, get) => ({
   notifications: [],
   users: [],
   templates: [],
+  taskTemplates: [],
   sidebarOpen: true,
   loading: false,
   
@@ -86,6 +94,7 @@ export const useStore = create<AppState>((set, get) => ({
   setSelectedVilla: (villa) => set({ selectedVilla: villa }),
   setSidebarOpen: (open) => set({ sidebarOpen: open }),
   setLoading: (loading) => set({ loading }),
+  setTasks: (tasks) => set({ tasks }),
   
   // Data actions
   addProject: (project) => set((state) => {
@@ -179,6 +188,19 @@ export const useStore = create<AppState>((set, get) => ({
     templates: state.templates.filter(t => t.id !== id)
   })),
   
+  // Task Template actions
+  addTaskTemplate: (template) => set((state) => ({
+    taskTemplates: [...state.taskTemplates, template]
+  })),
+  
+  updateTaskTemplate: (id, updates) => set((state) => ({
+    taskTemplates: state.taskTemplates.map(t => t.id === id ? { ...t, ...updates } : t)
+  })),
+  
+  deleteTaskTemplate: (id) => set((state) => ({
+    taskTemplates: state.taskTemplates.filter(t => t.id !== id)
+  })),
+  
   markNotificationAsRead: (id) => set((state) => ({
     notifications: state.notifications.map(n => 
       n.id === id ? { ...n, isRead: true } : n
@@ -215,7 +237,26 @@ export const useStore = create<AppState>((set, get) => ({
   },
   
   getCategoriesByVilla: (villaId) => {
-    return get().categories.filter(c => c.villaId === villaId);
+    console.log('Filtering categories for villaId:', villaId);
+    console.log('Available categories count:', get().categories.length);
+    
+    // Ensure villaId is a string for consistent comparison
+    const targetVillaId = villaId?.toString() || '';
+    
+    // Enhanced debugging for category filtering
+    const filteredCategories = get().categories.filter(category => {
+      // Ensure category.villaId is a string
+      const categoryVillaId = category.villaId?.toString() || '';
+      
+      // Log detailed comparison for debugging
+      const isMatch = categoryVillaId === targetVillaId;
+      console.log(`Category ${category.id} (${category.name}) - villaId: "${categoryVillaId}" vs target: "${targetVillaId}" - Match: ${isMatch}`);
+      
+      return isMatch;
+    });
+    
+    console.log(`Found ${filteredCategories.length} categories for villa ${targetVillaId}`);
+    return filteredCategories;
   },
   
   getTasksByCategory: (categoryId) => {
